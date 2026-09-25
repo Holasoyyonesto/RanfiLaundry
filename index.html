@@ -614,15 +614,13 @@ function tickReloj(){
   const pill=document.getElementById('reloj');
   pill.textContent=txt;
 
-  // Turno correcto según hora
+  // Turno correcto según hora — solo marcar el reloj, sin alerta automática
   const debeMatutino=(h>=8&&h<14);
   const debeVespertino=(h>=14&&h<20);
   const turnoMal=(debeMatutino&&st.turno==='vespertino')||(debeVespertino&&st.turno==='matutino');
   pill.classList.toggle('warn',turnoMal);
-  if(turnoMal){
-    const correcto=debeMatutino?'matutino':'vespertino';
-    mostrarAl('al-venta',`El reloj marca las ${txt}. El turno debería ser ${correcto}.`,'warn');
-  }
+  // La alerta solo aparece si el usuario ya hizo alguna venta en el turno incorrecto,
+  // no al cargar la app (evita bloquear la UI en horarios intermedios)
 
   // Auto-corte al cambio de turno (14:00 y 20:00)
   const esCambio=(h===14&&m===0)||(h===20&&m===0);
@@ -641,21 +639,35 @@ function tickReloj(){
     if(rest<=-1&&!o.liberada){o.liberada=true;setTimeout(()=>{delete st.ocupadas[id];saveLS();renderMaqGrid();},500);}
   });
 }
-tickReloj();setInterval(tickReloj,30000);
+
+// Arrancar reloj seguro — SOLO después del DOM
+// (no se llama aquí, se llama desde initApp)
+let _relojInterval = null;
+function iniciarReloj() {
+  try{ tickReloj(); }catch(e){ console.warn('tickReloj:',e); }
+  if(_relojInterval) clearInterval(_relojInterval);
+  _relojInterval = setInterval(()=>{ try{ tickReloj(); }catch(e){} }, 30000);
+}
+
 
 /* ══════════════════════════════════════════════════════
    NAVEGACIÓN
 ══════════════════════════════════════════════════════ */
 const TABS=['venta','kilos','hist','maq','clientes','corte','cfg'];
 function showTab(t){
-  TABS.forEach(x=>{document.getElementById('panel-'+x).classList.toggle('active',x===t);});
+  TABS.forEach(x=>{
+    const p=document.getElementById('panel-'+x);
+    if(p) p.classList.toggle('active',x===t);
+  });
   document.querySelectorAll('.nav-btn').forEach((b,i)=>b.classList.toggle('active',TABS[i]===t));
-  if(t==='hist')renderHist();
-  if(t==='maq')renderMaqStats();
-  if(t==='clientes')renderClientes();
-  if(t==='corte')renderCorte();
-  if(t==='cfg')initCfg();
-  if(t==='kilos')renderKiloList();
+  try{
+    if(t==='hist')renderHist();
+    if(t==='maq')renderMaqStats();
+    if(t==='clientes')renderClientes();
+    if(t==='corte')renderCorte();
+    if(t==='cfg')initCfg();
+    if(t==='kilos')renderKiloList();
+  }catch(e){ console.warn('showTab render:',e); }
 }
 
 /* ══════════════════════════════════════════════════════
@@ -706,6 +718,7 @@ function buscarCliente(){
    MÁQUINAS
 ══════════════════════════════════════════════════════ */
 function renderMaqGrid(panelId='maq-grid'){
+  try{
   const g=document.getElementById(panelId);
   if(!g)return;
   g.innerHTML='';
@@ -721,6 +734,7 @@ function renderMaqGrid(panelId='maq-grid'){
     d.onclick=()=>o?abrirModal(m.id):toggleMaq(m.id);
     g.appendChild(d);
   });
+}catch(e){console.warn('renderMaqGrid:',e);}
 }
 function toggleMaq(id){
   const i=st.sel.indexOf(id);i===-1?st.sel.push(id):st.sel.splice(i,1);
@@ -1161,9 +1175,11 @@ function copiarScript(){navigator.clipboard.writeText(document.getElementById('s
 ══════════════════════════════════════════════════════ */
 const _AT={};
 function mostrarAl(id,msg,tipo){
-  const el=document.getElementById(id);if(!el)return;
-  el.textContent=msg;el.className='alerta show '+tipo;
-  clearTimeout(_AT[id]);_AT[id]=setTimeout(()=>el.classList.remove('show'),4000);
+  try{
+    const el=document.getElementById(id);if(!el)return;
+    el.textContent=msg;el.className='alerta show '+tipo;
+    clearTimeout(_AT[id]);_AT[id]=setTimeout(()=>{try{el.classList.remove('show');}catch(e){}},4000);
+  }catch(e){console.warn('mostrarAl:',e);}
 }
 
 /* ══════════════════════════════════════════════════════
@@ -1177,10 +1193,19 @@ function instalarApp(){if(!_ie)return;_ie.prompt();_ie.userChoice.then(()=>{_ie=
 /* ══════════════════════════════════════════════════════
    INIT
 ══════════════════════════════════════════════════════ */
-renderMaqGrid();
-renderInsGrid();
-renderTicket();
-document.getElementById('cli-nom').addEventListener('input',()=>renderTicket());
+function initApp(){
+  iniciarReloj();
+  try{ renderMaqGrid(); }catch(e){ console.warn('renderMaqGrid:',e); }
+  try{ renderInsGrid(); }catch(e){ console.warn('renderInsGrid:',e); }
+  try{ renderTicket(); }catch(e){ console.warn('renderTicket:',e); }
+  const cliNom=document.getElementById('cli-nom');
+  if(cliNom) cliNom.addEventListener('input',()=>{ try{renderTicket();}catch(e){} });
+}
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 </script>
 </body>
 </html>
